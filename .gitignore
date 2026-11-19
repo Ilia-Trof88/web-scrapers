@@ -225,3 +225,6 @@ config/tass_headers.py
 
 # notebooks (.ipynb) directory
 notebooks
+
+# research directory
+research
