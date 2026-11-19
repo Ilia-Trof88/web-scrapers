@@ -2,13 +2,15 @@ import requests
 
 from bs4 import BeautifulSoup
 
-from helpers.pubmed import PubMedSession, fetch_articles
+from helpers.pubmed import PubMedSession
 
 class PubMedScraper:
     '''
     Класс не наследуется от привычного BaseScraper,
-    поскольку собирает не текстовые новости
+    поскольку собирает не текстовые новости.
     '''
+
+    DEFAULT_URL = 'https://pubmed.ncbi.nlm.nih.gov'
 
     def __init__(self,
                  start_url: str | None = None):
@@ -105,6 +107,23 @@ class PubMedScraper:
         final_links_list = [x.get('href') for x in links_tags]
 
         return final_links_list
+
+    def _parse_article_ids(self,
+                           bs_object: BeautifulSoup) -> list[str] | None:
+        '''
+        TODO
+        '''
+
+        links_tag = bs_object.find_all('a', class_='docsum-title')
+
+        if links_tag is None:
+            print('На странице не найдено ссылок!')
+            return None
+
+        final_links_list = [self.DEFAULT_URL + str(x.get('href')) for x in links_tag]
+
+        return final_links_list
+
 
     def _fetch_single_article(self,
                               article_url: str) -> dict[str, str]:
