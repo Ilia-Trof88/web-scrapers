@@ -1,7 +1,10 @@
+from pathlib import Path
+
 import requests
 
 from bs4 import BeautifulSoup
 
+from helpers import pubmed_pdf
 from helpers.pubmed import PubMedSession
 
 
@@ -310,3 +313,97 @@ class PubMedScraper:
         print(f"Собрано статей: {len(collected_articles)}")
 
         return collected_articles
+
+    def download_pdf(
+        self,
+        article: dict,
+        output_dir: str | Path = "data/pubmed_data/pdfs",
+        *,
+        overwrite: bool = False,
+    ) -> dict:
+        """
+        Метод для скачивания PDF по ОДНОЙ уже собранной статье.
+
+        Файл берётся из PMC Open Access Subset (публичный бакет AWS S3),
+        PMCID уточняется через Europe PMC. Статьи, которых нет в открытом
+        доступе, не скачиваются: у них pdf_status != "downloaded".
+
+        Args:
+            article (dict): Запись из perform_parsing / _parse_single_article_information.
+            output_dir (str | Path): Каталог для PDF. Default = "data/pubmed_data/pdfs".
+            overwrite (bool): Перекачивать существующий файл. Default = False.
+
+        Returns:
+            dict: Та же запись, дополненная полями pmid, pmcid, doi, pdf_license,
+            pdf_path, pdf_url, pdf_source, pdf_status.
+        """
+
+        records = pubmed_pdf.download_for_records(
+            [article],
+            output_dir,
+            max_workers=1,
+            overwrite=overwrite,
+            session=self.session,
+        )
+
+        return records[0]
+
+    def download_full_text_pdfs(
+        self,
+        articles: list[dict],
+        output_dir: str | Path = "data/pubmed_data/pdfs",
+        *,
+        max_workers: int = 4,
+        overwrite: bool = False,
+        limit: int | None = None,
+    ) -> list[dict]:
+        """
+        Метод для массового скачивания PDF по уже собранным статьям.
+
+        Процесс можно разделить на следующие этапы:
+
+            1. PMID берётся из pubmed_url, PMCID и лицензия — из Europe PMC.
+            2. Для каждого PMCID проверяется наличие файла в PMC Open Access (AWS S3).
+            3. Файлы качаются в несколько потоков (по одному на PMCID).
+
+        Args:
+            articles (list[dict]): Записи, которые вернул perform_parsing.
+            output_dir (str | Path): Каталог для PDF. Default = "data/pubmed_data/pdfs".
+            max_workers (int): Кол-во потоков загрузки. Default = 4 (S3 отдаёт ~25 КБ/с на соединение).
+            overwrite (bool): Перекачивать уже существующие файлы. Default = False.
+            limit (int | None): Ограничение на кол-во скачанных файлов за вызов.
+                Полезно для пробных прогонов. Default = None (без ограничения).
+
+        Returns:
+            list[dict]: Те же записи, дополненные полями pmid, pmcid, doi, pdf_license,
+            pdf_path, pdf_url, pdf_source, pdf_status. Возможные значения pdf_status:
+            "downloaded", "exists", "no_pmcid", "not_in_oa_subset", "error", "skipped".
+        """
+
+        print(f"Загрузка PDF для {len(articles)} записей...")
+
+        result = pubmed_pdf.download_for_records(
+            articles,
+            output_dir,
+            max_workers=max_workers,
+            overwrite=overwrite,
+            limit=limit,
+            session=self.session,
+        )
+
+        statuses = [article.get("pdf_status") for article in result]
+
+        downloaded = statuses.count(pubmed_pdf.STATUS_DOWNLOADED)
+        already = statuses.count(pubmed_pdf.STATUS_EXISTS)
+        unavailable = statuses.count(pubmed_pdf.STATUS_NO_PMCID) + statuses.count(
+            pubmed_pdf.STATUS_NOT_IN_OA
+        )
+        errors = statuses.count(pubmed_pdf.STATUS_ERROR)
+        skipped = statuses.count(pubmed_pdf.STATUS_SKIPPED)
+
+        print("Загрузка PDF закончена!")
+        print(f"Скачано: {downloaded} | Уже были: {already}")
+        print(f"Нет в открытом доступе: {unavailable}")
+        print(f"Ошибки: {errors} | Пропущено из-за limit: {skipped}")
+
+        return result
