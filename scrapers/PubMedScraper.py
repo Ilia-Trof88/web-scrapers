@@ -89,6 +89,23 @@ class PubMedScraper:
 
         return final_abstract
 
+    def _parse_full_text_links(self,
+                               bs_object: BeautifulSoup) -> list[str] | None:
+        '''
+        TODO
+        '''
+
+        links_tags = bs_object.select('div.full-text-links a.link-item')
+
+        if links_tags is None:
+
+            print('Не удалось выделить ссылки на полные текста')
+            return None
+
+        final_links_list = [x.get('href') for x in links_tags]
+
+        return final_links_list
+
     def _fetch_single_article(self,
                               article_url: str) -> dict[str, str]:
         '''
@@ -103,12 +120,22 @@ class PubMedScraper:
 
         heading = self._parse_heading(bs_object = result)
 
+        links = self._parse_full_text_links(bs_object = result)
+
         result_dict = {
             "title": heading,
             "abstract": abstract,
-            "authors": authors
+            "authors": authors,
+            "full_text_links": links
         }
 
         return result_dict
+
+    def parse_query(self,
+                    start_url: str):
+        '''
+        TODO
+        '''
+        pass
         
         
