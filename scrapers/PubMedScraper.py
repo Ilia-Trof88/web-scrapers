@@ -124,6 +124,23 @@ class PubMedScraper:
 
         return final_links_list
 
+    def _get_next_page_url(self,
+                           bs_object: BeautifulSoup) -> str:
+        '''
+        TODO
+        '''
+
+        next_page_tag = bs_object.find('div', class_='search-results-chunk results-chunk')
+
+        next_page_url = next_page_tag.get('data-next-page-url', None)
+
+        if next_page_url is None:
+
+            print('Не удалось обнаружить ссылку на следующую страницу!')
+            return None
+
+        return self.DEFAULT_URL + next_page_url
+
 
     def _fetch_single_article(self,
                               article_url: str) -> dict[str, str]:
