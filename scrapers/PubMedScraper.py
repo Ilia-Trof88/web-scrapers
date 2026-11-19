@@ -20,7 +20,7 @@ class PubMedScraper:
         print('PubMedScraper инициализирован!')
 
     def _get_bs_object(self,
-                       page_url: str) -> BeautifulSoup | None:
+                       page_url: str) -> BeautifulSoup:
         '''
         TODO
         '''
@@ -31,7 +31,7 @@ class PubMedScraper:
 
             print('Произошла ошибка при получении объекта bs4')
 
-            raise ValueError('Произошла ошибка при создании объекта BeautifulSoup!')
+            return BeautifulSoup() # Возвращаем пустой BeautifulSoup, чтобы при ошибки в данном методе, остальные методы не падали с ошибкой
 
         bs_object = BeautifulSoup(result.text, 'html.parser')
 
@@ -125,18 +125,29 @@ class PubMedScraper:
         return final_links_list
 
     def _get_next_page_url(self,
-                           bs_object: BeautifulSoup) -> str:
+                           bs_object: BeautifulSoup) -> str | None:
         '''
         TODO
         '''
 
         next_page_tag = bs_object.find('div', class_='search-results-chunk results-chunk')
 
+        if next_page_tag is None:
+
+            print('Не удалось обнаружить ссылку на следующую страницу!')
+            # В данном контексте имеется ввиду в принципе ТЭГ следующей страницы
+            # Вероятнее всего, страница не изначально не имела данного элемента
+
+            return None
+
         next_page_url = next_page_tag.get('data-next-page-url', None)
 
         if next_page_url is None:
 
             print('Не удалось обнаружить ссылку на следующую страницу!')
+            # В данном контексте имеется ввиду href (URL) следующей страницы.
+            # Если не удалось обнаружить следующий по счету URL, значит дошли до верхней границы
+            
             return None
 
         return self.DEFAULT_URL + next_page_url
@@ -148,7 +159,7 @@ class PubMedScraper:
         TODO
         '''
         
-        result = self._get_bs_object(page_url = article_url)
+        result = self._get_bs_object(page_url = article_url) # bs_object
 
         authors = self._parse_authors(bs_object = result)
 
@@ -167,10 +178,10 @@ class PubMedScraper:
 
         return result_dict
 
-    def parse_query(self,
+    def parse_n_results(self,
                     start_url: str):
         '''
-        TODO
+        Метод для сбора информации по N-статья с заранее заданным выбранным началом.
         '''
         pass
         
