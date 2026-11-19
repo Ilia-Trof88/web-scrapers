@@ -20,6 +20,8 @@
 
 Проект представляет собой коллекцию независимых скраперов, каждый из которых нацелен на конкретный новостной сайт. Общая архитектура построена вокруг абстрактного базового класса `BaseScraper`, задающего единый интерфейс для получения списка новостей на странице и парсинга отдельной статьи. Все актуальные скраперы (`TassScraper`, `EuroNewsScraper`, `GazetaScraper`, `VtomskeScraper`) наследуются от этого класса. Скраперы для Gazeta.spb.ru и Vtomske.ru были переработаны в соответствии с этой архитектурой: по аналогии с `EuroNewsScraper` каждое поле статьи извлекается отдельным приватным методом, а сбор по рубрике выполняется публичным методом `parse_rubric`. Прежние версии этих скраперов (`Scrapper` и `NewsParser`) сохранены в репозитории для обратной совместимости, однако помечены как устаревшие.
 
+Скрапер `PubMedScraper` собирает метаданные научных публикаций с сайта pubmed.ncbi.nlm.nih.gov. Класс не наследуется от `BaseScraper`, поскольку работает со страницами результатов поиска и извлекает данные другого порядка: название статьи, авторов, аннотацию и ссылки на полный текст. Для обхода proof-of-work заглушки, которую PubMed показывает вместо страниц, и для скачивания PDF предусмотрены вспомогательные модули `helpers/pubmed.py` и `helpers/pubmed_pdf.py`.
+
 Результатом работы каждого скрапера является список словарей, который в скриптах запуска преобразуется в `pandas.DataFrame` и сохраняется в формате CSV.
 
 ## Поддерживаемые источники
@@ -30,6 +32,7 @@
 | EuroNews (euronews.com) | `EuroNewsScraper` | Постраничный обход рубрик с обходом защиты через `cloudscraper` |
 | Gazeta.spb.ru | `GazetaScraper` | Постраничный обход рубрик, парсинг HTML |
 | Vtomske.ru | `VtomskeScraper` | Обход тематических лент по кнопке "Раньше", парсинг HTML |
+| PubMed (pubmed.ncbi.nlm.nih.gov) | `PubMedScraper` | Постраничный обход результатов поиска, обход proof-of-work заглушки через `PubMedSession` |
 
 ## Структура репозитория
 
@@ -37,17 +40,22 @@
 WebScrapers/
 ├── config/
 │   └── tass_config.yaml       # Эндпоинты API ТАСС
+├── helpers/
+│   ├── pubmed.py              # Доступ к PubMed: обход proof-of-work заглушки, E-utilities API
+│   └── pubmed_pdf.py          # Поиск и скачивание PDF из PMC Open Access Subset
 ├── scrapers/
 │   ├── BaseScraper.py         # Абстрактный базовый класс скрапера
 │   ├── TassScraper.py         # Скрапер для tass.ru
 │   ├── EuroNewsScraper.py     # Скрапер для euronews.com
 │   ├── GazetaScraper.py       # Скрапер для gazeta.spb.ru
-│   └── VtomskeScraper.py      # Скрапер для vtomske.ru
+│   ├── VtomskeScraper.py      # Скрапер для vtomske.ru
+│   └── PubMedScraper.py       # Скрапер для pubmed.ncbi.nlm.nih.gov
 ├── scripts/
 │   ├── tass_scraping.py       # Скрипт запуска сбора новостей ТАСС
 │   ├── euronews_scraping.py   # Скрипт запуска сбора новостей EuroNews
 │   ├── gazeta_scraping.py     # Скрипт запуска сбора новостей Gazeta.spb.ru
-│   └── vtomske_scraping.py    # Скрипт запуска сбора новостей Vtomske.ru
+│   ├── vtomske_scraping.py    # Скрипт запуска сбора новостей Vtomske.ru
+│   └── pubmed_scraping.py     # Скрипт запуска сбора публикаций PubMed
 ├── src/
 │   └── functions.py           # Вспомогательные функции (чтение YAML-конфигов)
 ├── requirements.txt           # Зависимости проекта
@@ -149,6 +157,27 @@ python -m scripts.vtomske_scraping
 
 При запуске потребуется указать количество новостей и название тематики (Томск, Россия, Мир, Экономика, Политика, Происшествия, Авто, Спорт; регистр не учитывается). Результат сохраняется в `data/vtomske_data/<тематика>.csv`.
 
+### PubMed
+
+```bash
+python -m scripts.pubmed_scraping
+```
+
+Стартовая страница поиска и количество статей задаются в самом скрипте (`start_url` и `n_arts`). Результат сохраняется в `data/pubmed_data/covid_data.csv`; каталог `data/pubmed_data` необходимо создать заранее.
+
+Скачивание PDF выполняется методами `download_pdf` (одна статья) и `download_full_text_pdfs` (список статей) класса `PubMedScraper`:
+
+```python
+from scrapers.PubMedScraper import PubMedScraper
+
+scraper = PubMedScraper(start_url="https://pubmed.ncbi.nlm.nih.gov/?term=covid%2019")
+
+articles = scraper.perform_parsing(n_articles=1000)
+articles = scraper.download_full_text_pdfs(articles, max_workers=8)
+```
+
+Файлы сохраняются в `data/pubmed_data/pdfs`, каталог создается автоматически. Параметр `limit` ограничивает количество скачиваемых файлов, значение `limit=0` позволяет проверить наличие PDF в открытом доступе без скачивания.
+
 Перед запуском скриптов необходимо убедиться в существовании соответствующих поддиректорий внутри `data/`.
 
 ## Описание модулей и классов
@@ -211,6 +240,45 @@ python -m scripts.vtomske_scraping
 
 Устаревший класс `NewsParser` (не наследуется от `BaseScraper`) сохранен в модуле для обратной совместимости. При инициализации выводит предупреждение о необходимости использовать `VtomskeScraper`.
 
+### scrapers/PubMedScraper.py
+
+Класс `PubMedScraper` реализует сбор метаданных научных публикаций с сайта PubMed. Из статьи извлекаются название, авторы, аннотация и ссылки на полный текст. Класс не наследуется от `BaseScraper`, поскольку собирает данные другого порядка. Сам текст публикации не извлекается; для его получения предусмотрены методы скачивания PDF.
+
+- `DEFAULT_URL` - атрибут класса с корневым адресом сайта, к которому конкатенируются относительные ссылки на статьи и следующие страницы.
+- `__init__(self, start_url: str | None = None)` - инициализация с указанием стартовой страницы поиска (например, `https://pubmed.ncbi.nlm.nih.gov/?term=covid%2019`) и создание сессии `PubMedSession`.
+- `_get_bs_object(page_url)` - вспомогательный метод получения объекта `BeautifulSoup` по URL. При ответе с кодом, отличным от 200, возвращает пустой объект `BeautifulSoup`, чтобы не прерывать основной цикл сбора.
+- `_parse_heading`, `_parse_authors`, `_parse_abstract`, `_parse_full_text_links` - набор приватных методов для извлечения отдельных полей статьи. Авторы объединяются в одну строку через запятую.
+- `_parse_current_page_article_ids(bs_object)` - сбор абсолютных URL всех статей с текущей страницы результатов поиска.
+- `_get_next_page_url(bs_object)` - получение URL следующей страницы из атрибута `data-next-page-url` блока результатов поиска; возвращает `None`, если следующей страницы нет.
+- `_parse_single_article_information(article_url)` - агрегирует результаты приватных методов парсинга в единый словарь.
+- `perform_parsing(start_url=None, n_articles=100)` - основной публичный метод: последовательно обходит страницы результатов поиска и собирает данные по статьям до достижения заданного количества. Если стартовый URL не передан ни в конструктор, ни в метод, выбрасывается `ValueError`; одновременная передача в оба места также приводит к `ValueError`.
+- `download_pdf(article, output_dir="data/pubmed_data/pdfs", *, overwrite=False)` - скачивание PDF по одной статье. Возвращает ту же запись, дополненную полями `pmid`, `pmcid`, `doi`, `pdf_license`, `pdf_path`, `pdf_url`, `pdf_source`, `pdf_status`.
+- `download_full_text_pdfs(articles, output_dir="data/pubmed_data/pdfs", *, max_workers=4, overwrite=False, limit=None)` - массовое скачивание PDF по списку статей с выводом сводки по статусам загрузки.
+
+### helpers/pubmed.py
+
+Модуль доступа к PubMed с обходом proof-of-work заглушки. Содержит два независимых способа получения данных: официальный E-utilities API и разбор HTML-страницы. `PubMedScraper` использует разбор HTML-страниц, функции E-utilities доступны для отдельной пакетной загрузки метаданных.
+
+- `BASE_URL`, `EUTILS_URL`, `DEFAULT_HEADERS` - константы с адресами сайта и API, а также с заголовками запросов.
+- `PubMedSession` - наследник `requests.Session`, который при получении заглушки решает челлендж: подбирает nonce, при котором `sha256(f"{challenge_id}:{nonce}")` имеет заданное число ведущих нулевых бит, отправляет его на `/_pow/solve` и получает cookie `N_POW_Challenge`. Cookie живет около пяти минут, поэтому между запусками она не кэшируется.
+- `challenge_params(html)`, `solve_challenge(html, page_url)` - служебные методы распознавания и решения челленджа.
+- `get_page(url, max_attempts=3, strict=True)` - получение страницы с автоматическим решением челленджа и повторными попытками. При `strict=True` вместо заглушки выбрасывается `PubMedChallengeError`.
+- `PubMedChallengeError` - исключение, сигнализирующее о том, что вместо статьи вернулась proof-of-work заглушка.
+- `fetch_via_eutils(pmid, *, api_key=None, email=None, session=None)`, `parse_eutils_article(article)`, `fetch_articles(pmids, **eutils_kwargs)` - получение метаданных через E-utilities API: XML-ответ, разбор одного узла `PubmedArticle` и пакетная загрузка до 200 идентификаторов за запрос. Поддерживаются ключ API и адрес электронной почты, без ключа действует ограничение в 3 запроса в секунду.
+- `fetch_via_html(pmid, session=None)` - получение метаданных статьи разбором HTML-страницы `https://pubmed.ncbi.nlm.nih.gov/<pmid>/` через `PubMedSession`.
+
+### helpers/pubmed_pdf.py
+
+Модуль отвечает за загрузку PDF по данным, собранным `PubMedScraper`, и работает только с сетью и файлами. PMCID уточняется батчами через Europe PMC REST (до 50 PMID за запрос, без ключа API), сам файл скачивается из публичного бакета PMC Open Access на AWS S3 по адресу `https://pmc-oa-opendata.s3.amazonaws.com/<PMCID>.<версия>/<PMCID>.<версия>.pdf`.
+
+- `download_for_records(records, output_dir="data/pubmed_data/pdfs", *, max_workers=4, overwrite=False, limit=None, session=None)` - основная точка входа: дополняет записи `PubMedScraper` полями `pmid`, `pmcid`, `doi`, `pdf_license`, `pdf_path`, `pdf_url`, `pdf_source`, `pdf_status`, `pdf_error`. Файл скачивается один раз для каждого PMCID, записи с повторяющимся PMID используют общий путь.
+- `lookup_ids(pmids, session=None, delay=0.12)` - сопоставление PMID с PMCID, DOI и лицензией через Europe PMC.
+- `find_pdf_key(pmcid, session=None)`, `build_pdf_url(key)` - поиск главного PDF в бакете через листинг по префиксу с учетом версии статьи и построение публичного HTTPS-адреса файла.
+- `is_valid_pdf(path)` - проверка целостности файла по сигнатуре `%PDF-` в начале и маркеру `%%EOF` в конце. Обрезанный после прерванной загрузки файл будет перекачан.
+- `download(url, destination, session=None, timeout=180)` - потоковое скачивание с записью во временный файл `*.part` и переименованием только после проверки ответа.
+- `extract_pmid`, `extract_doi`, `extract_pmcid`, `as_links` - служебные функции разбора ссылок; `as_links` понимает как список, так и строковое представление списка, которое получается после чтения CSV.
+- `STATUS_DOWNLOADED`, `STATUS_EXISTS`, `STATUS_NO_PMCID`, `STATUS_NOT_IN_OA`, `STATUS_ERROR`, `STATUS_SKIPPED` - константы статусов загрузки, значения которых попадают в поле `pdf_status`.
+
 ### src/functions.py
 
 Модуль вспомогательных функций общего назначения.
@@ -225,8 +293,11 @@ python -m scripts.vtomske_scraping
 - EuroNews: `headline`, `lead`, `date`, `author`, `article_text`, `source_url`, `root_url`.
 - Gazeta.spb.ru: `headline`, `body`, `tags`, `publishing_date`, `author`, `url`, `rubric_name`.
 - Vtomske.ru: `headline`, `news_body`, `publishing_date`, `author`, `url`.
+- PubMed: `title`, `abstract`, `authors`, `full_text_links`, `pubmed_url`.
 
 Все результаты сохраняются в формате CSV с использованием `pandas.DataFrame.to_csv`.
+
+Методы скачивания PDF дополняют записи PubMed полями `pmid`, `pmcid`, `doi`, `pdf_license`, `pdf_path`, `pdf_url`, `pdf_source`, `pdf_status`, `pdf_error`. Поле `pdf_status` принимает значения `downloaded`, `exists`, `no_pmcid`, `not_in_oa_subset`, `error`, `skipped`; поле `pdf_error` заполняется только при ошибке загрузки. Записи можно передавать в методы скачивания как сразу после `perform_parsing`, так и после чтения сохраненного CSV: строковое представление поля `full_text_links` разбирается автоматически.
 
 ## Известные ограничения
 
@@ -236,6 +307,9 @@ python -m scripts.vtomske_scraping
 - В `GazetaScraper` и `VtomskeScraper` каждый приватный метод парсинга поля выполняет отдельный HTTP-запрос к странице статьи, поэтому сбор одной новости требует нескольких запросов.
 - Количество собранных новостей может превышать заданное, так как сбор ведется постранично и текущая страница обрабатывается целиком.
 - Устаревшие классы `Scrapper` и `NewsParser` не рекомендуется использовать в новом коде; они могут быть удалены в последующих версиях.
+- `PubMedScraper` работает с HTML-страницами PubMed, которые могут быть закрыты proof-of-work заглушкой. `PubMedSession` решает челлендж автоматически, однако при троттлинге (`429 invalid_pow`) решение отклоняется, и `get_page` выбрасывает `PubMedChallengeError`; в этом случае следует подождать около минуты.
+- PDF скачиваются только для статей из PMC Open Access Subset. Авторские рукописи без CC-лицензии и статьи по подписке получают статус `not_in_oa_subset`, пейволлы издателей не обходятся. На выборке из 1000 статей открытый доступ есть примерно у двух третей записей.
+- Скорость отдачи бакета PMC Open Access составляет около 25 КБ/с на одно соединение, поэтому загрузка выполняется в несколько потоков (`max_workers`). Полный прогон по выборке из 1000 статей занимает около трех часов, а объем файлов составляет порядка 0,9 ГБ.
 - Проект предназначен для образовательных и исследовательских целей.
 
 ## Лицензия
