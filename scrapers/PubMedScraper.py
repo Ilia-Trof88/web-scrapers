@@ -234,20 +234,30 @@ class PubMedScraper:
 
         return result_dict
 
-    def perform_parsing(self, start_url: str | None = None, n_articles: int = 100):
+    def perform_parsing(
+        self, start_url: str | None = None, n_articles: int = 100
+    ) -> list[dict]:
         """
         Метод для сбора информации по N-статьям
         с заранее выбранной стартовой страницей (start_url).
 
-        start_url может быть задан либо в конструкторе
+        *ВАЖНО* Предполагается, что start_url
 
-        I. Установление текущей страницы
-        II. Сбор всех новостей с текущей страницы
-        III. Поиск ссылки на новую страницу
-        IV. Переход на новую страницу
-        * Повторять до достижения желаемого кол-ва новостей
+        start_url может быть задан либо в конструкторе.
 
-        TODO
+        Процесс сбора информации можно разделить на следующие этапы:
+
+            1. Установление текущей страницы. Если объект BS текущий страницы пустой - процесс сбора прекращается
+            2. Сбор всех новостей с текущей страницы.
+            3. Поиск ссылки на новую страницу.
+            4. Переход на новую страницу.
+
+        Args:
+            start_url (str | None): Начальная страница, откуда начинается цикл сбора новостей.
+            n_articles (int): Кол-во новостей, которое необходимо собрать. Default = 100.
+
+        Returns:
+            list[dict]: Список словарей с необходимой информацией по статьям.
         """
 
         if (start_url is None) and (self.start_url is None):
@@ -265,11 +275,16 @@ class PubMedScraper:
 
             print(f"Сбор новостей со страницы со следующим URL: {start_url}")
 
-            # Достаем информацию по статьям на текущей странице
+            # Достаем информацию по статьям на текущей странице.
 
             current_page_bs_object = self._get_bs_object(
                 page_url=start_url
             )  # Объект BeautifulSoup текущей страницы
+
+            if current_page_bs_object == BeautifulSoup:
+
+                print("Текущая страница не найдена! Завершаю цикл")
+                break
 
             current_page_articles = self._parse_current_page_article_ids(
                 bs_object=current_page_bs_object
