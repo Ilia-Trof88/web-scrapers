@@ -281,7 +281,7 @@ class PubMedScraper:
                 page_url=start_url
             )  # Объект BeautifulSoup текущей страницы
 
-            if current_page_bs_object == BeautifulSoup:
+            if current_page_bs_object == BeautifulSoup():
 
                 print("Текущая страница не найдена! Завершаю цикл")
                 break
